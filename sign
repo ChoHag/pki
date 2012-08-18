@@ -1,0 +1,32 @@
+#!/bin/sh
+
+usage() {
+  e=$1
+  echo "Usage:"
+  echo "  $(basename $0) [-h|--help]"
+  echo "    This help"
+  echo "  $(basename $0) -c <CA> <key-name>"
+  echo "    Sign key with CA"
+  if [ "$e" ]; then exit $e; fi
+}
+
+if [ "$1" = "--help" ]; then usage 0; fi
+while getopts "c:" arg; do
+  case $arg in
+    c) CA=$OPTARG ;;
+    h) usage 0 ;;
+    ?) usage 1 ;;
+  esac
+done
+shift $(expr $OPTIND - 1)
+name="$1"
+if [ -z "$CA" -o -z "$name" ]; then usage 1; fi
+export CA
+
+cd ${PKIDIR:-/srv/pki}
+
+set -e
+
+CRL_URL=$(grep -A3 CRL\ Distrib "$CA/certificates/CA" | sed -n 's/.*URI://p')
+export CRL_URL=${CRL_URL:+URI:$CRL_URL}
+openssl ca -config pki.conf -in "$CA/requests/$name" -out "$CA/certificates/$name"

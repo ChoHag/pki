@@ -1,0 +1,50 @@
+#!/bin/sh
+
+usage() {
+  e=$1
+  echo Usage:
+  echo "  $(basename $0) [-h|--help]"
+  echo "    This help"
+  echo "  $(basename $0) [-d <CRL_URL>] <CA>"
+  echo "    Create CA with CRL distribution CRL_URL"
+  if [ "$e" ]; then exit $e; fi
+}
+
+if [ "$1" = "--help" ]; then usage 0; fi
+while getopts "d:" arg; do
+  case $arg in
+    d) CRL_URL=$OPTARG ;;
+    h) usage 0 ;;
+    ?) usage 1 ;;
+  esac
+done
+shift $(expr $OPTIND - 1)
+
+CA="$1"
+if [ -z "$CA" ]; then usage 1; fi
+export CA CRL_URL
+
+cd ${PKIDIR:-/srv/pki}
+if [ -e "$CA" ]; then
+  echo CA "$CA" already exists. >&2
+  exit 2
+fi
+if ! tmp=$(mktemp -d); then
+  echo Cannot create temporary directory. >&2
+  exit -1
+fi
+trap "rm -fr $tmp" EXIT
+
+set -e
+
+export default_ou=PKI
+export default_cn=CA
+export default_o="$CA"
+mkdir "$CA" "$CA/certificates" "$CA/keys" "$CA/requests"
+echo 01 > "$CA/serial"
+touch "$CA/index"
+openssl genrsa -out $tmp/key 4096
+openssl rsa -in $tmp/key -des3 -text -out "$CA/keys/CA"
+openssl req -config pki.conf -new -x509 -key $tmp/key -text -out "$CA/certificates/CA"
+openssl ca -config pki.conf -gencrl -keyfile $tmp/key -cert "$CA/certificates/CA" | openssl crl -text -out "$CA/crl"
+

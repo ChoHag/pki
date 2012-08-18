@@ -1,0 +1,42 @@
+#!/bin/sh
+
+usage() {
+  e=$1
+  echo "Usage:"
+  echo "  $(basename $0) [-h|--help]"
+  echo "    This help"
+  echo "  $(basename $0) -c <CA> <key-name>"
+  echo "    Create a key for CA"
+  if [ "$e" ]; then exit $e; fi
+}
+
+if [ "$1" = "--help" ]; then usage 0; fi
+while getopts "c:" arg; do
+  case $arg in
+    c) CA=$OPTARG ;;
+    h) usage 0 ;;
+    ?) usage 1 ;;
+  esac
+done
+shift $(expr $OPTIND - 1)
+name="$1"
+if [ -z "$CA" -o -z "$name" ]; then usage 1; fi
+export CA
+
+cd ${PKIDIR:-/srv/pki}
+if ! tmp=$(mktemp -d); then
+  echo Cannot create temporary directory. >&2
+  exit -1
+fi
+trap "rm -fr $tmp" EXIT
+
+set -e
+
+export default_o="$CA"
+export default_ou="Invalid"
+export default_cn="$name"
+openssl req -config pki.conf -new -newkey rsa -keyout $tmp/key -text -out "$CA/requests/$name" -passout pass:password
+chmod 400 "$CA/requests/$name"
+openssl rsa -in $tmp/key -passin pass:password -text -out "$CA/keys/$name"
+chmod 400 "$CA/keys/$name"
+
