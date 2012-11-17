@@ -53,10 +53,13 @@ if [ -n "$subca" ]; then
   sign -s -c "$CA" "$NEWCA"
   cp "$CA/keys/$NEWCA" "$NEWCA/keys/CA"
   cp "$CA/certificates/$NEWCA" "$NEWCA/certificates/CA"
+  key="$NEWCA/keys/CA"
 else
   openssl genrsa -out $tmp/key 4096
-  openssl rsa -in $tmp/key -des3 -text -out "$CA/keys/CA"
-  openssl req -config pki.conf -new -x509 -key $tmp/key -text -out "$CA/certificates/CA"
-  openssl ca -config pki.conf -gencrl -keyfile $tmp/key -cert "$CA/certificates/CA" | openssl crl -text -out "$CA/crl"
+  openssl rsa -in $tmp/key -des3 -text -out "$NEWCA/keys/CA"
+  openssl req -config pki.conf -new -x509 -key $tmp/key -text -out "$NEWCA/certificates/CA"
+  key="$tmp/key"
 fi
+
+openssl ca -config pki.conf -gencrl -keyfile "$key" -cert "$NEWCA/certificates/CA" | openssl crl -text -out "$NEWCA/crl"
 
