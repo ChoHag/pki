@@ -5,15 +5,21 @@ usage() {
   echo "Usage:"
   echo "  $(basename $0) [-h|--help]"
   echo "    This help"
-  echo "  $(basename $0) -c <CA> <key-name>"
-  echo "    Create a key for CA"
+  echo "  $(basename $0) [-s] [-e] -c <CA> <key-name>"
+  echo "    Create a key with a signing request for CA"
+  echo "    -s: Create a sub-CA signing request"
+  echo "    -e: Encrypt the private key with des3"
   if [ "$e" ]; then exit $e; fi
 }
 
+unset encrypt subca
+
 if [ "$1" = "--help" ]; then usage 0; fi
-while getopts "c:" arg; do
+while getopts "c:es" arg; do
   case $arg in
     c) CA=$OPTARG ;;
+    e) encrypt=1 ;;
+    s) subca=1 ;;
     h) usage 0 ;;
     ?) usage 1 ;;
   esac
@@ -32,11 +38,11 @@ trap "rm -fr $tmp" EXIT
 
 set -e
 
-export default_o="$CA"
-export default_ou="Invalid"
-export default_cn="$name"
-openssl req -config pki.conf -new -newkey rsa -keyout $tmp/key -text -out "$CA/requests/$name" -passout pass:password
+export default_o="${default_o:-$CA}"
+export default_ou="${default_ou:-Invalid}"
+export default_cn="${default_cn:-$name${subca:+ Sub-CA}}"
+openssl req -config pki.conf -new -newkey rsa -keyout $tmp/key -text -out "$CA/requests/$name" -passout pass:password ${subca:+-reqexts req_subca_extensions}
 chmod 400 "$CA/requests/$name"
-openssl rsa -in $tmp/key -passin pass:password -text -out "$CA/keys/$name"
+openssl rsa -in $tmp/key -passin pass:password ${encrypt:+-des3} -text -out "$CA/keys/$name"
 chmod 400 "$CA/keys/$name"
 
