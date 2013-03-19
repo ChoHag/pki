@@ -1,37 +1,70 @@
-#!/bin/sh
+#!/bin/bash
+
+set -e
 
 usage() {
   e=$1
   echo "Usage:"
   echo "  $(basename $0) [-h|--help]"
   echo "    This help"
-  echo "  $(basename $0) [-s] -c <CA> <key-name>"
-  echo "    Sign request with CA"
-  echo "    -s: Create a sub-CA certificate"
+  echo "  $(basename $0) [-p <pkidir>] [-x <extensions>] [-P <policy>]"
+  echo "      Self-signed certificates:"
+  echo "                 -S <request-name>"
+  echo "      CA-signed certificates:"
+  echo "                 -c <ca> [-r] <request-name>"
+  echo "    Sign request as CA"
+  echo "    -p: Base directory for PKI data"
+  echo "    -c: Certificate Authority"
+  echo "    -x: Section of config file with extensions to apply to certificate"
+  echo "    -P: Section of config file defining certificate policy"
+  echo "    -r: (default action): name of CSR to sign"
+  echo "    -S: Sign the CSR with the key that generated it (self-signed certificate)"
   if [ "$e" ]; then exit $e; fi
 }
 
-unset subca
+unset action name
+unset pkidir ca extensions policy
+
+set_action() {
+  if [ "$action" ]; then
+    echo "Cannot set conflicting actions" >&2
+    exit 1
+  fi
+  action="$1"
+}
+
 if [ "$1" = "--help" ]; then usage 0; fi
-while getopts "c:s" arg; do
+while getopts "hp:c:x:P:r:S:" arg; do
   case $arg in
-    c) CA=$OPTARG ;;
-    s) subca=1 ;;
     h) usage 0 ;;
+    p) pkidir=$OPTARG ;;
+    x) extensions=$OPTARG ;;
+    P) policy=$OPTARG ;;
+    S)
+      set_action selfsign
+      name=$OPTARG
+      ;;
+    r)
+      set_action request
+      name=$OPTARG
+      ;;
+    c) export ca=${OPTARG//\//_} ;;
     ?) usage 1 ;;
   esac
 done
 shift $(expr $OPTIND - 1)
-name="$1"
-if [ -z "$CA" -o -z "$name" ]; then usage 1; fi
-export CA
+if [ -z "$name" ]; then set_action request; name=$1; fi
+if [ "$action" = request -a -z "$ca" ]; then usage 1; fi
 
-cd ${PKIDIR:-/srv/pki}
+cd ${pkidir:-${PKIDIR:?No PKI working directory}}
 
-set -e
+case $action in
+  request)
+    openssl ca -config pki.conf -in requests/"${name//\//_}" -out certificates/"${name//\//_}" ${extensions:+-extensions $extensions} ${policy:+-policy $policy}
+    ;;
+  selfsign)
+    export ca=${name//\//_}
+    openssl ca -config pki.conf -selfsign -keyfile keys/"${name//\//_}" -in requests/"${name//\//_}" -out certificates/"${name//\//_}" ${extensions:+-extensions $extensions} ${policy:+-policy $policy}
+    ;;
+esac
 
-if [ -z "$CRL_URL" ]; then
-  CRL_URL=$(grep -A3 CRL\ Distrib "$CA/certificates/CA" | sed -n 's/.*URI://p')
-fi
-export CRL_URL=${CRL_URL:+URI:$CRL_URL}
-openssl ca -config pki.conf -in "$CA/requests/$name" -out "$CA/certificates/$name" ${subca:+-extensions ca_subca_extensions -policy subca_policy}

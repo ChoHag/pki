@@ -1,0 +1,36 @@
+#!/bin/bash
+
+set -e
+
+usage() {
+  e=$1
+  echo "Usage:"
+  echo "  $(basename $0) [-h|--help]"
+  echo "    This help"
+  echo "  $(basename $0) [-p <pkidir>] [-x <extensions>] <key-name>"
+  echo "    Create a key with a signing request for CA"
+  echo "    -p: Base directory for PKI data"
+  echo "    -x: Extensions section to use"
+  if [ "$e" ]; then exit $e; fi
+}
+
+unset pkidir bits
+
+if [ "$1" = "--help" ]; then usage 0; fi
+while getopts "hp:x:" arg; do
+  case $arg in
+    h) usage 0 ;;
+    p) pkidir=$OPTARG ;;
+    x) extensions=$OPTARG ;;
+    ?) usage 1 ;;
+  esac
+done
+shift $(expr $OPTIND - 1)
+name="$1"
+
+cd ${pkidir:-${PKIDIR:?No PKI working directory}}
+
+export default_o="${default_o:-$CA}"
+export default_ou="${default_ou:-Invalid}"
+export default_cn="${default_cn:-$name${subca:+ Sub-CA}}"
+openssl req -new -config pki.conf -text -key keys/"${name//\//_}" -out requests/"${name//\//_}" ${extensions:+-reqexts $extensions}

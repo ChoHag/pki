@@ -1,0 +1,151 @@
+#!/bin/bash
+
+set -e
+
+usage() {
+  e=$1
+  echo "Usage:"
+  echo "  $(basename $0) [-h|--help]"
+  echo "    This help"
+  echo "  $(basename $0) [-p <pkidir>]"
+  echo "    Create a key with a signing request for CA"
+  echo "    -p: Base directory for PKI data. Defaults to current directory."
+  if [ "$e" ]; then exit $e; fi
+}
+
+unset pkidir
+
+if [ "$1" = "--help" ]; then usage 0; fi
+while getopts "hp:" arg; do
+  case $arg in
+    h) usage 0 ;;
+    p)
+      pkidir=$OPTARG
+      mkdir "$pkidir"
+      ;;
+    ?) usage 1 ;;
+  esac
+done
+shift $(expr $OPTIND - 1)
+
+cd ${pkidir:-.}
+
+mkdir certificates requests keys tmp
+chmod 700 keys tmp
+cat <<EOF >pki.conf
+ca  =
+crl =
+default_c     = GB
+default_st    =
+default_l     =
+default_o     =
+default_ou    =
+default_cn    =
+default_email =
+
+
+[ ca ]
+default_ca      = ca_simple
+
+[ ca_simple ]
+dir             = ./\${ENV::ca}
+new_certs_dir   = \$dir/certificates
+database        = \$dir/index
+
+certificate     = \$dir/CA
+serial          = \$dir/serial
+crl             = \$dir/crl
+private_key     = \$dir/key
+RANDFILE        = \$dir/rand
+
+x509_extensions = simple_extensions
+name_opt        = ca_default
+cert_opt        = ca_default
+
+policy          = simple_policy_ca
+unique_subject  = yes
+default_days    = 3650
+default_crl_days= 30
+default_md      = default
+preserve        = no
+
+[ simple_policy_ca ]
+countryName             = match
+organizationName        = match
+organizationalUnitName  = supplied
+commonName              = supplied
+emailAddress            = optional
+
+[ simple_policy_subca ]
+countryName             = match
+organizationName        = supplied
+organizationalUnitName  = supplied
+commonName              = supplied
+emailAddress            = optional
+
+[ simple_extensions ]
+basicConstraints       = critical, CA:FALSE
+keyUsage               = critical, digitalSignature, keyEncipherment, keyAgreement
+extendedKeyUsage       = serverAuth, clientAuth
+subjectKeyIdentifier   = hash
+authorityKeyIdentifier = keyid:always,issuer:always
+
+[ simple_extensions_ca ]
+basicConstraints       = critical, CA:TRUE
+keyUsage               = critical, keyCertSign
+subjectKeyIdentifier   = hash
+authorityKeyIdentifier = keyid:always,issuer:always
+
+[ simple_extensions_ca_with_crl ]
+basicConstraints       = critical, CA:TRUE
+keyUsage               = critical, keyCertSign, cRLSign
+subjectKeyIdentifier   = hash
+authorityKeyIdentifier = keyid:always,issuer:always
+crlDistributionPoints  = URI:\${ENV::crl}
+
+
+[ req ]
+req_extensions          = req_extensions
+distinguished_name      = req_distinguished_name
+
+[ req_extensions ]
+basicConstraints       = CA:FALSE
+keyUsage               = digitalSignature, keyEncipherment, keyAgreement
+extendedKeyUsage       = serverAuth, clientAuth
+
+[ req_extensions_ca ]
+basicConstraints       = critical, CA:TRUE
+keyUsage               = critical, keyCertSign
+
+[ req_extensions_ca_with_crl ]
+basicConstraints       = critical, CA:TRUE
+keyUsage               = critical, keyCertSign
+crlDistributionPoints  = URI:\${ENV::crl}
+
+[ req_distinguished_name ]
+countryName            = Country Name (2 letter code)
+countryName_default    = \${ENV::default_c}
+countryName_min        = 2
+countryName_max        = 2
+
+stateOrProvinceName    = State or Province Name (full name)
+stateOrProvinceName_default = \${ENV::default_st}
+
+localityName           = Locality Name (eg, city)
+localityName_default   = \${ENV::default_l}
+
+0.organizationName     = Organization Name (eg, company)
+0.organizationName_default = \${ENV::default_o}
+
+organizationalUnitName = Organizational Unit Name (eg, section)
+organizationalUnitName_default = \${ENV::default_ou}
+
+commonName             = Common Name (e.g. server FQDN)
+commonName_default     = \${ENV::default_cn}
+commonName_max         = 64
+
+emailAddress           = Email Address
+emailAddress_default   = \${ENV::default_email}
+emailAddress_max       = 64
+
+EOF

@@ -1,65 +1,75 @@
-#!/bin/sh
+#!/bin/bash
+
+set -e
 
 usage() {
   e=$1
   echo Usage:
   echo "  $(basename $0) [-h|--help]"
   echo "    This help"
-  echo "  $(basename $0) [-c <Signing CA>] [-d <CRL_URL>] <CA>"
-  echo "    Create CA with CRL distribution CRL_URL"
-  echo "    -c: Create the CA as a sub-CA of the given CA"
+  echo "  $(basename $0) [-p <pkidir>] [-c <parent-ca>] [-d <crl-url>]"
+  echo "                 [(-e|-P)] [-a <algorithm>] [-b <bits>]"
+  echo "                 <key-name>"
+  echo "    Create a key with a signing request for CA"
+  echo "    -p: Base directory for PKI data"
+  echo "    -c: Create this CA as a subca of the parent CA"
+  echo "    -d: Create a CA with a CRL at the URL"
+  echo "    -e: Encrypt the key (default)"
+  echo "    -P: Leave the key unencrypted"
+  echo "   These options are passed to newkey:"
+  echo "    -a: Encryption algorithm to use (default des3)"
+  echo "    -b: Key size. No default except openssl's 512."
   if [ "$e" ]; then exit $e; fi
 }
 
-unset CA subca
+unset pkidir parent crl algorithm bits
+clean=1
+plain=0
 
 if [ "$1" = "--help" ]; then usage 0; fi
-while getopts "c:d:" arg; do
+while getopts "p:c:d:Pe:E:a:b:d:" arg; do
   case $arg in
-    c) CA=$OPTARG subca=1 ;;
-    d) CRL_URL=$OPTARG ;;
     h) usage 0 ;;
+    p) pkidir=$OPTARG ;;
+    c) parent=$OPTARG; echo Unimplemented >&2; exit 2 ;;
+    d) export crl=$OPTARG ;;
+    P) plain=1 ;;
+    e) ;; # default
+    a) algorithm=$OPTARG ;;
+    b) bits=$OPTARG ;;
     ?) usage 1 ;;
   esac
 done
 shift $(expr $OPTIND - 1)
+name="$1"
 
-NEWCA="$1"
-if [ -z "$CA" ]; then CA="$NEWCA"; fi
-if [ -z "$NEWCA" ]; then usage 1; fi
-export NEWCA CA CRL_URL
+cd ${pkidir:-${PKIDIR:?No PKI working directory}}
 
-cd ${PKIDIR:-/srv/pki}
-if [ -e "$NEWCA" ]; then
-  echo CA "$NEWCA" already exists. >&2
+if [ -e "${name//\//_}" ]; then
+  echo "CA \"$name\" already exists." >&2
   exit 2
 fi
-if ! tmp=$(mktemp -d); then
-  echo Cannot create temporary directory. >&2
-  exit -1
-fi
-trap "rm -fr $tmp" EXIT
 
-set -e
+export default_o="${default_o:-$name}"
+export default_ou="${default_ou:-PKI${parent:+:$name}}"
+export default_cn="${default_cn:-${parent:+Sub-}name}"
+mkdir "${name//\//_}" "${name//\//_}/certificates"
+echo 01 > "${name//\//_}/serial"
+touch "${name//\//_}/index"
 
-export default_o="${default_o:-$NEWCA}"
-export default_ou=${default_ou:-PKI${subca:+:$CA}}
-export default_cn=${default_cn:-${subca:+Sub-}CA}
-mkdir "$NEWCA" "$NEWCA/certificates" "$NEWCA/keys" "$NEWCA/requests"
-echo 01 > "$NEWCA/serial"
-touch "$NEWCA/index"
-if [ -n "$subca" ]; then
-  newkey -s -e -c "$CA" "$NEWCA"
-  sign -s -c "$CA" "$NEWCA"
-  cp "$CA/keys/$NEWCA" "$NEWCA/keys/CA"
-  cp "$CA/certificates/$NEWCA" "$NEWCA/certificates/CA"
-  key="$NEWCA/keys/CA"
-else
-  openssl genrsa -out $tmp/key 4096
-  openssl rsa -in $tmp/key -des3 -text -out "$NEWCA/keys/CA"
-  openssl req -config pki.conf -new -x509 -key $tmp/key -text -out "$NEWCA/certificates/CA"
-  key="$tmp/key"
+newkey -p . -E ${algorithm:+-a $algorithm} ${bits:+-b $bits} "$name"
+awk -vRS=-----BEGIN '/ENCRYPTED/ {printf "-----BEGIN" $0}' keys/"${name//\//_}" > "${name//\//_}/key"
+chmod 400 "${name//\//_}/key"
+newcsr -p . -x req_extensions_ca${crl:+_with_crl} "$name"
+sign -p . -x simple_extensions_ca${crl:+_with_crl} -S "$name"
+ln -s certificates/01.pem "${name//\//_}"/CA
+if [ "$crl" ]; then
+  export ca="${name//\//_}"
+  openssl ca -config pki.conf -gencrl -keyfile keys/"${name//\//_}" -cert "${name//\//_}/CA" | openssl crl -text -out "${name//\//_}/crl"
 fi
 
-openssl ca -config pki.conf -gencrl -keyfile "$key" -cert "$NEWCA/certificates/CA" | openssl crl -text -out "$NEWCA/crl"
-
+if [ "$clean" ]; then
+  rm certificates/"${name//\//_}"
+  rm requests/"${name//\//_}"
+  rm -f keys/"${name//\//_}" keys/encrypted-"${name//\//_}"
+fi
