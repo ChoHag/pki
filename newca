@@ -7,33 +7,35 @@ usage() {
   echo Usage:
   echo "  $(basename $0) [-h|--help]"
   echo "    This help"
-  echo "  $(basename $0) [-p <pkidir>] [-c <parent-ca>] [-d <crl-url>]"
-  echo "                 [(-e|-P)] [-a <algorithm>] [-b <bits>]"
+  echo "  $(basename $0) [-p <pkidir>] [-c <parent-ca>] [-P <policy>] [-d <crl-url>]"
+  echo "                 [(-e|-U)] [-a <algorithm>] [-b <bits>]"
   echo "                 <key-name>"
   echo "    Create a key with a signing request for CA"
   echo "    -p: Base directory for PKI data"
   echo "    -c: Create this CA as a subca of the parent CA"
+  echo "    -P: Policy to apply"
   echo "    -d: Create a CA with a CRL at the URL"
   echo "    -e: Encrypt the key (default)"
-  echo "    -P: Leave the key unencrypted"
+  echo "    -U: Leave the key unencrypted"
   echo "   These options are passed to newkey:"
   echo "    -a: Encryption algorithm to use (default des3)"
   echo "    -b: Key size. No default except openssl's 512."
   if [ "$e" ]; then exit $e; fi
 }
 
-unset pkidir parent crl algorithm bits
+unset pkidir parent policy crl algorithm bits
 clean=1
 plain=0
 
 if [ "$1" = "--help" ]; then usage 0; fi
-while getopts "p:c:d:Pe:E:a:b:d:" arg; do
+while getopts "p:c:P:d:Ue:E:a:b:d:" arg; do
   case $arg in
     h) usage 0 ;;
     p) pkidir=$OPTARG ;;
-    c) parent=$OPTARG; echo Unimplemented >&2; exit 2 ;;
+    c) parent=$OPTARG ;;
+    P) policy=$OPTARG ;;
     d) export crl=$OPTARG ;;
-    P) plain=1 ;;
+    U) plain=1 ;;
     e) ;; # default
     a) algorithm=$OPTARG ;;
     b) bits=$OPTARG ;;
@@ -52,7 +54,7 @@ fi
 
 export default_o="${default_o:-$name}"
 export default_ou="${default_ou:-PKI${parent:+:$name}}"
-export default_cn="${default_cn:-${parent:+Sub-}name}"
+export default_cn="${default_cn:-${parent:+Sub-}CA}"
 mkdir "${name//\//_}" "${name//\//_}/certificates"
 echo 01 > "${name//\//_}/serial"
 touch "${name//\//_}/index"
@@ -61,8 +63,13 @@ newkey -p . -E ${algorithm:+-a $algorithm} ${bits:+-b $bits} "$name"
 awk -vRS=-----BEGIN '/ENCRYPTED/ {printf "-----BEGIN" $0}' keys/"${name//\//_}" > "${name//\//_}/key"
 chmod 400 "${name//\//_}/key"
 newcsr -p . -x req_extensions_ca${crl:+_with_crl} "$name"
-sign -p . -x simple_extensions_ca${crl:+_with_crl} -S "$name"
-ln -s certificates/01.pem "${name//\//_}"/CA
+if [ "$parent" ]; then
+  sign -p . -x simple_extensions_ca${crl:+_with_crl} -P "${policy:-simple_policy_subca}" -c "$parent" -r "$name"
+  cp certificates/"${name//\//_}" "${name//\//_}"/CA
+else
+  sign -p . -x simple_extensions_ca${crl:+_with_crl} ${policy:+-P "$policy"} -S "$name"
+  ln -s certificates/01.pem "${name//\//_}"/CA
+fi
 if [ "$crl" ]; then
   export ca="${name//\//_}"
   openssl ca -config pki.conf -gencrl -keyfile keys/"${name//\//_}" -cert "${name//\//_}/CA" | openssl crl -text -out "${name//\//_}/crl"

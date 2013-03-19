@@ -30,7 +30,4 @@ name="$1"
 
 cd ${pkidir:-${PKIDIR:?No PKI working directory}}
 
-export default_o="${default_o:-$CA}"
-export default_ou="${default_ou:-Invalid}"
-export default_cn="${default_cn:-$name${subca:+ Sub-CA}}"
 openssl req -new -config pki.conf -text -key keys/"${name//\//_}" -out requests/"${name//\//_}" ${extensions:+-reqexts $extensions}
