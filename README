@@ -1,0 +1,114 @@
+Extremely simple (robust) but comprehensive suite of tools for managing a
+simple PKI using openssl (http://www.openssl.org/).
+
+Features:
+
+  * Create a CA (a directory structure holding the files necessary to operate a CA)
+    * Can set (but does not manage) a CRL URL.
+    * Including self-signed root CAs and CAs signed by other CAs.
+  * Create a key with or without encryption.
+  * Create a signing request from a key.
+  * Sign a signing request as a CA.
+
+  * Except for encrypted keys, all certificate, request and key files are
+    written with the human-readable text form included because don't you hate
+    trying to remember which openssl syntax to use to parse those PEM files?
+
+Missing features:
+
+  * I have no idea really which types of certificates need which extensions.
+
+Upcoming features:
+
+  * Create keys and requests independently of the working directory.
+  * Some form of guide to adding sections to pki.conf for different certificate
+    and request extensions.
+  * Less clunky code.
+
+Features I ought to work on but probably won't:
+
+  * Documentation.
+
+
+Usage guide:
+
+All commands display usage with -h, --help or an error parsing arguments.
+
+Requires a working directory with a pki.conf file (equivalent to openssl.cnf).
+Create it with:
+
+  # newpki -p /srv/pki
+  # ls -1F /srv/pki
+  certificates/
+  keys/
+  pki.conf
+  requests/
+  tmp/
+
+
+Create a root CA:
+
+  # newca -p /srv/pki Example
+  # ls -1FR /srv/pki/Example/                                                                                                                                                                                                                                   
+  /srv/pki/Example/:
+  CA@
+  certificates/
+  index
+  index.attr
+  index.old
+  key
+  serial
+  serial.old
+
+  /srv/pki/Example/certificates:
+  01.pem
+  # stat -c%N /srv/pki/Example/CA
+  `/srv/pki/Example/CA' -> `certificates/01.pem'
+
+  Or:
+
+  # newca -p /srv/pki -d http://example.com/crl Example # With a CRL
+  # ls -1F /srv/pki/Example/crl                                                                                                                                                                                                                               
+  /srv/pki/Example/crl
+
+
+Create a sub-CA (-d for a (different) CRL URL again):
+
+  # newca -p /srv/pki -c Example Secondary
+  # ls -1dF /srv/pki/Secondary
+  /srv/pki/Secondary/
+
+
+Create a key:
+
+  # newkey -p /srv/pki test
+  # stat -c%A /srv/pki/keys/test 
+  -r--------
+
+
+Create a request (from a key):
+
+  # newcsr -p /srv/pki test
+  # cat /srv/pki/requests/test                                                                                                                                                                                                                                  
+  Certificate Request:
+      Data:
+	  ...
+  -----BEGIN CERTIFICATE REQUEST-----
+  ...
+  -----END CERTIFICATE REQUEST-----
+
+
+Sign a request (from a certificate):
+
+  # sign -p /srv/pki -c Example test
+  # cat /srv/pki/certificates/test
+  Certificate:
+      Data:
+          ...
+  -----BEGIN CERTIFICATE-----
+  ...
+  -----END CERTIFICATE-----
+
+
+  Certificate is also stored in /srv/pki/Example/certificates/<serial>.pem
+
