@@ -1,18 +1,21 @@
-Extremely simple (robust) but comprehensive suite of tools for managing a
-simple PKI using openssl (http://www.openssl.org/).
+This project doesn't even have a proper name. It's a collection of tools to make
+the management of a CA with openssl (http://www.openssl.org/) a little easier.
+
+There's no database, the configuration file has been reigned in (and is created
+for you) and all the output files (except for encrypted keys) retain their
+human-readable headings so there's no need to remember which openssl command
+parses which binary blob.
 
 Features:
 
-  * Create a CA (a directory structure holding the files necessary to operate a CA)
-    * Can set (but does not manage) a CRL URL.
-    * Including self-signed root CAs and CAs signed by other CAs.
-  * Create a key with or without encryption.
+  * No complicated code to read in order to understand and trust what it's
+    doing.
+  * Create the directory and self-signed certificate to operate a CA.
+    * Can also create CAs signed by other CAs (untested).
+    * Can set (but does not do anything else to) a certificate's CRL URL.
+  * Create a key with or without encryption (encrypted by default).
   * Create a signing request from a key.
   * Sign a signing request as a CA.
-
-  * Except for encrypted keys, all certificate, request and key files are
-    written with the human-readable text form included because don't you hate
-    trying to remember which openssl syntax to use to parse those PEM files?
 
 Missing features:
 
@@ -43,13 +46,12 @@ Create it with:
   keys/
   pki.conf
   requests/
-  tmp/
 
 
 Create a root CA:
 
   # newca -p /srv/pki Example
-  # ls -1FR /srv/pki/Example/                                                                                                                                                                                                                                   
+  # ls -1FR /srv/pki/Example
   /srv/pki/Example/:
   CA@
   certificates/
@@ -62,13 +64,13 @@ Create a root CA:
 
   /srv/pki/Example/certificates:
   01.pem
-  # stat -c%N /srv/pki/Example/CA
-  `/srv/pki/Example/CA' -> `certificates/01.pem'
+  # ls -l /srv/pki/Example/CA
+  lrwxr-xr-x  1 root  wheel  19 Feb 23 13:46 /srv/pki/Example/CA -> certificates/01.pem
 
-  Or:
+  Or with a CRL:
 
-  # newca -p /srv/pki -d http://example.com/crl Example # With a CRL
-  # ls -1F /srv/pki/Example/crl                                                                                                                                                                                                                               
+  # newca -p /srv/pki -d http://example.com/crl Example
+  # ls -1F /srv/pki/Example/crl
   /srv/pki/Example/crl
 
 
@@ -82,14 +84,14 @@ Create a sub-CA (-d for a (different) CRL URL again):
 Create a key:
 
   # newkey -p /srv/pki test
-  # stat -c%A /srv/pki/keys/test 
-  -r--------
+  # ls -l /srv/pki/keys/test
+  -r--------  1 root  wheel  1751 Feb 23 13:49 /srv/pki/keys/test
 
 
 Create a request (from a key):
 
   # newcsr -p /srv/pki test
-  # cat /srv/pki/requests/test                                                                                                                                                                                                                                  
+  # cat /srv/pki/requests/test
   Certificate Request:
       Data:
 	  ...

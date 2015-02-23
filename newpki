@@ -1,16 +1,20 @@
-#!/bin/bash
+#!/bin/sh
 
 set -e
+
+# todo:
+#  defaults
+#  sane policies
 
 usage() {
   e=$1
   echo "Usage:"
   echo "  $(basename $0) [-h|--help]"
   echo "    This help"
-  echo "  $(basename $0) [-p <pkidir>]"
+  echo "  $(basename $0) [[-p] <pkidir>]"
   echo "    Create a key with a signing request for CA"
   echo "    -p: Base directory for PKI data. Defaults to current directory."
-  if [ "$e" ]; then exit $e; fi
+  if [ -n "$e" ]; then exit $e; fi
 }
 
 unset pkidir
@@ -19,23 +23,21 @@ if [ "$1" = "--help" ]; then usage 0; fi
 while getopts "hp:" arg; do
   case $arg in
     h) usage 0 ;;
-    p)
-      pkidir=$OPTARG
-      mkdir "$pkidir"
-      ;;
+    p) pkidir=$OPTARG ;;
     ?) usage 1 ;;
   esac
 done
 shift $(expr $OPTIND - 1)
 
-cd ${pkidir:-.}
+mkdir -p "${pkidir:=${1:-${PKIDIR:?No PKI working directory}}}"
+cd "$pkidir"
 
-mkdir certificates requests keys tmp
-chmod 700 keys tmp
+mkdir certificates requests keys
+chmod 700 keys
 cat <<EOF >pki.conf
 ca  =
 crl =
-default_c     = GB
+default_c     = ZZ
 default_st    =
 default_l     =
 default_o     =
@@ -48,7 +50,7 @@ default_email =
 default_ca      = ca_simple
 
 [ ca_simple ]
-dir             = ./\${ENV::ca}
+dir             = $pkidir/\${ENV::ca}
 new_certs_dir   = \$dir/certificates
 database        = \$dir/index
 

@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/sh
 
 set -e
 
@@ -7,27 +7,56 @@ usage() {
   echo "Usage:"
   echo "  $(basename $0) [-h|--help]"
   echo "    This help"
-  echo "  $(basename $0) [-p <pkidir>] [-x <extensions>] <key-name>"
-  echo "    Create a key with a signing request for CA"
-  echo "    -p: Base directory for PKI data"
+  echo "  $(basename $0) [-p <pkidir>] [-x <extensions>]"
+  echo "          [-k <key-file>] (-o <outfile> | <key-name>)"
+  echo "    Create a signing request from a key"
+  echo "    -k: Alternate key file path"
+  echo "    -o: Output file (default requests/<name>)"
+  echo "    -p: Base directory for PKI data (default \$PKIDIR)"
   echo "    -x: Extensions section to use"
   if [ "$e" ]; then exit $e; fi
 }
 
-unset pkidir bits
+unset pkidir
+unset keyfile extensions outfile
 
 if [ "$1" = "--help" ]; then usage 0; fi
-while getopts "hp:x:" arg; do
+while getopts "hk:o:p:x:" arg; do
   case $arg in
     h) usage 0 ;;
+    k) keyfile=$OPTARG ;;
+    o) outfile=$OPTARG ;;
     p) pkidir=$OPTARG ;;
     x) extensions=$OPTARG ;;
     ?) usage 1 ;;
   esac
 done
 shift $(expr $OPTIND - 1)
-name="$1"
 
-cd ${pkidir:-${PKIDIR:?No PKI working directory}}
+name=$1
+# No / or NUL characters to protect the filesystem. If you screw up the
+# config file that's your lookout.
+fs_name=$(echo "$name" | tr '\000/' _)
 
-openssl req -new -config pki.conf -text -key keys/"${name//\//_}" -out requests/"${name//\//_}" ${extensions:+-reqexts $extensions}
+if [ -z "$keyfile" -o -n "$outfile" ]; then
+  cd "${pkidir:=${PKIDIR:?No PKI working directory}}"
+fi
+
+if [ -z "$outfile" ]; then
+  if [ -n "$name" ]; then
+    outfile=requests/"$fs_name"
+  else
+    outfile=$keyfile.csr
+  fi
+fi
+
+if [ -z "$keyfile" ]; then
+  if [ -n "$name" ]; then
+    keyfile=keys/"$fs_name"
+  else
+    echo "Cannot find key file." >&2
+    exit 1
+  fi
+fi
+
+openssl req -new -config pki.conf -text -key "$keyfile" -out "$outfile" ${extensions:+-reqexts $extensions}

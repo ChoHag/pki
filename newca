@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/sh
 
 set -e
 
@@ -8,46 +8,50 @@ usage() {
   echo "  $(basename $0) [-h|--help]"
   echo "    This help"
   echo "  $(basename $0) [-p <pkidir>] [-c <parent-ca>] [-P <policy>] [-d <crl-url>]"
-  echo "                 [(-e|-U)] [-a <algorithm>] [-b <bits>]"
-  echo "                 <key-name>"
-  echo "    Create a key with a signing request for CA"
-  echo "    -p: Base directory for PKI data"
+  echo "                 [(-n|-N)] [-a <algorithm>] [-b <bits>]"
+  echo "                 [<ca-name>]"
+  echo "    Create a CA"
   echo "    -c: Create this CA as a subca of the parent CA"
-  echo "    -P: Policy to apply"
   echo "    -d: Create a CA with a CRL at the URL"
-  echo "    -e: Encrypt the key (default)"
-  echo "    -U: Leave the key unencrypted"
+  echo "    -n: Don't encrypt the key (default is to encrypt)"
+  echo "    -N: Encrypt as normal but also place an unencrypted key in unencrypted-<key>"
+  echo "    -p: Base directory for PKI data"
+  echo "    -P: Policy to apply"
   echo "   These options are passed to newkey:"
   echo "    -a: Encryption algorithm to use (default des3)"
   echo "    -b: Key size. No default except openssl's 512."
   if [ "$e" ]; then exit $e; fi
 }
 
-unset pkidir parent policy crl algorithm bits
-clean=1
-plain=0
+unset pkidir name
+unset algorithm bits ca crl policy
+encrypt=yes
+eflag=-N
 
 if [ "$1" = "--help" ]; then usage 0; fi
-while getopts "p:c:P:d:Ue:E:a:b:d:" arg; do
+while getopts "ha:b:c:d:nNp:P:" arg; do
   case $arg in
     h) usage 0 ;;
-    p) pkidir=$OPTARG ;;
-    c) parent=$OPTARG ;;
-    P) policy=$OPTARG ;;
-    d) export crl=$OPTARG ;;
-    U) plain=1 ;;
-    e) ;; # default
     a) algorithm=$OPTARG ;;
     b) bits=$OPTARG ;;
+    c) ca=$OPTARG ;;
+    d) export crl=$OPTARG ;;
+    n) encrypt=no eflag=-n ;;
+    N) encrypt=both ;;
+    p) pkidir=$OPTARG ;;
+    P) policy=$OPTARG ;;
     ?) usage 1 ;;
   esac
 done
 shift $(expr $OPTIND - 1)
-name="$1"
+name="${1:-root-ca}"
 
-cd ${pkidir:-${PKIDIR:?No PKI working directory}}
+cd "${pkidir:=${PKIDIR:?No PKI working directory}}"
 
-if [ -e "${name//\//_}" ]; then
+# No / or NUL characters to protect the filesystem. If you screw up the
+# config file that's your lookout.
+fs_name=$(echo "$name" | tr '\000/' _)
+if [ -e "$fs_name" ]; then
   echo "CA \"$name\" already exists." >&2
   exit 2
 fi
@@ -55,28 +59,38 @@ fi
 export default_o="${default_o:-$name}"
 export default_ou="${default_ou:-PKI${parent:+:$name}}"
 export default_cn="${default_cn:-${parent:+Sub-}CA}"
-mkdir "${name//\//_}" "${name//\//_}/certificates"
-echo 01 > "${name//\//_}/serial"
-touch "${name//\//_}/index"
+mkdir "$fs_name" "$fs_name/certificates"
+echo 01 > "$fs_name/serial"
+touch "$fs_name/index"
 
-newkey -p . -E ${algorithm:+-a $algorithm} ${bits:+-b $bits} "$name"
-awk -vRS=-----BEGIN '/ENCRYPTED/ {printf "-----BEGIN" $0}' keys/"${name//\//_}" > "${name//\//_}/key"
-chmod 400 "${name//\//_}/key"
-newcsr -p . -x req_extensions_ca${crl:+_with_crl} "$name"
-if [ "$parent" ]; then
-  sign -p . -x simple_extensions_ca${crl:+_with_crl} -P "${policy:-simple_policy_subca}" -c "$parent" -r "$name"
-  cp certificates/"${name//\//_}" "${name//\//_}"/CA
+newkey -p "$pkidir" $eflag ${algorithm:+-a $algorithm} ${bits:+-b $bits} "$name"
+if [ $encrypt == no ]; then
+  plainkey=keys/"$fs_name"
+  cp keys/"$fs_name" "$fs_name"/key
 else
-  sign -p . -x simple_extensions_ca${crl:+_with_crl} ${policy:+-P "$policy"} -S "$name"
-  ln -s certificates/01.pem "${name//\//_}"/CA
-fi
-if [ "$crl" ]; then
-  export ca="${name//\//_}"
-  openssl ca -config pki.conf -gencrl -keyfile keys/"${name//\//_}" -cert "${name//\//_}/CA" | openssl crl -text -out "${name//\//_}/crl"
+  cp keys/"$fs_name" "$fs_name"/key
+  if [ $encrypt == both ]; then
+    cp keys/unencrypted-"$fs_name" "$fs_name"/unencrypted-key
+  fi
+  plainkey=keys/unencrypted-"$fs_name"
 fi
 
-if [ "$clean" ]; then
-  rm certificates/"${name//\//_}"
-  rm requests/"${name//\//_}"
-  rm -f keys/"${name//\//_}" keys/encrypted-"${name//\//_}"
+newcsr -p . -x req_extensions_ca${crl:+_with_crl} -k "$plainkey" "$name"
+
+if [ -n "$ca" ]; then
+  sign -p "$pkidir" -x simple_extensions_ca${crl:+_with_crl} -P "${policy:-simple_policy_subca}" -c "$ca" "$name"
+  cp certificates/"$fs_name" "$fs_name"/CA
+else
+  sign -p "$pkidir" -x simple_extensions_ca${crl:+_with_crl} ${policy:+-P "$policy"} -s -k "$plainkey" "$name"
+  ln -s certificates/01.pem "$fs_name"/CA ### _Relative_ link from $fs_name/
 fi
+
+if [ "$crl" ]; then
+  export ca="$fs_name"
+  openssl ca -config pki.conf -gencrl -keyfile "$plainkey" -cert "$fs_name/CA" | openssl crl -text -out "$fs_name/crl"
+fi
+
+#if [ "$clean" ]; then
+rm -f keys/"$fs_name" keys/encrypted-"$fs_name"
+rm certificates/"$fs_name"
+rm requests/"$fs_name"

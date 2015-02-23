@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/sh
 
 set -e
 
@@ -8,63 +8,53 @@ usage() {
   echo "  $(basename $0) [-h|--help]"
   echo "    This help"
   echo "  $(basename $0) [-p <pkidir>] [-x <extensions>] [-P <policy>]"
-  echo "      Self-signed certificates:"
-  echo "                 -S <request-name>"
-  echo "      CA-signed certificates:"
-  echo "                 -c <ca> [-r] <request-name>"
-  echo "    Sign request as CA"
-  echo "    -p: Base directory for PKI data"
+  echo "      (-s | -c <ca>) [-k <keyfile>] <request-name>"
+  echo "    Sign request as CA (-c) or self-sign (-s)"
   echo "    -c: Certificate Authority"
-  echo "    -x: Section of config file with extensions to apply to certificate"
+  echo "    -k: Alternate key file"
+  echo "    -p: Base directory for PKI data"
   echo "    -P: Section of config file defining certificate policy"
-  echo "    -r: (default action): name of CSR to sign"
-  echo "    -S: Sign the CSR with the key that generated it (self-signed certificate)"
+  echo "    -s: Sign the CSR with the key that generated it (self-signed certificate)"
+  echo "    -x: Section of config file with extensions to apply to certificate"
   if [ "$e" ]; then exit $e; fi
 }
 
-unset action name
-unset pkidir ca extensions policy
-
-set_action() {
-  if [ "$action" ]; then
-    echo "Cannot set conflicting actions" >&2
-    exit 1
-  fi
-  action="$1"
-}
+unset pkidir name
+unset ca keyfile policy selfsign extensions
 
 if [ "$1" = "--help" ]; then usage 0; fi
-while getopts "hp:c:x:P:r:S:" arg; do
+while getopts "hc:k:p:P:sx:" arg; do
   case $arg in
     h) usage 0 ;;
+    c) export ca=$(echo "$OPTARG" | tr '\000/' _) ;;
+    k) keyfile=$OPTARG ;;
     p) pkidir=$OPTARG ;;
-    x) extensions=$OPTARG ;;
     P) policy=$OPTARG ;;
-    S)
-      set_action selfsign
-      name=$OPTARG
-      ;;
-    r)
-      set_action request
-      name=$OPTARG
-      ;;
-    c) export ca=${OPTARG//\//_} ;;
+    s) selfsign=-selfsign ;;
+    x) extensions=$OPTARG ;;
     ?) usage 1 ;;
   esac
 done
 shift $(expr $OPTIND - 1)
-if [ -z "$name" ]; then set_action request; name=$1; fi
-if [ "$action" = request -a -z "$ca" ]; then usage 1; fi
+name=$1
+# No / or NUL characters to protect the filesystem. If you screw up the
+# config file that's your lookout.
+fs_name=$(echo "$name" | tr '\000/' _)
 
-cd ${pkidir:-${PKIDIR:?No PKI working directory}}
+cd "${pkidir:=${PKIDIR:?No PKI working directory}}"
 
-case $action in
-  request)
-    openssl ca -config pki.conf -in requests/"${name//\//_}" -out certificates/"${name//\//_}" ${extensions:+-extensions $extensions} ${policy:+-policy $policy}
-    ;;
-  selfsign)
-    export ca=${name//\//_}
-    openssl ca -config pki.conf -selfsign -keyfile keys/"${name//\//_}" -in requests/"${name//\//_}" -out certificates/"${name//\//_}" ${extensions:+-extensions $extensions} ${policy:+-policy $policy}
-    ;;
-esac
+if [ -n "$selfsign" ]; then
+  export ca=$fs_name
+fi
 
+# Use TMPDIR to ensure this is kept away from non-volatile if necessary.
+if ! tmp=$(mktemp -t -d); then
+  echo "Cannot create temporary directory." >&2
+  exit 2
+fi
+trap "rm -fr $tmp" EXIT
+
+openssl ca -config pki.conf $selfsign ${keyfile:+-keyfile "$keyfile"}   \
+    -in requests/"$fs_name" -out "$tmp"/certificate                     \
+    ${extensions:+-extensions $extensions} ${policy:+-policy $policy}
+mv "$tmp"/certificate certificates/"$fs_name"

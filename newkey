@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/sh
 
 set -e
 
@@ -7,52 +7,69 @@ usage() {
   echo "Usage:"
   echo "  $(basename $0) [-h|--help]"
   echo "    This help"
-  echo "  $(basename $0) [-p <pkidir>] [(-e|-E) [-a <algorithm>]] [-b <bits>] <key-name>"
-  echo "    Create a key with a signing request for CA"
-  echo "    -p: Base directory for PKI data"
-  echo "    -e: Encrypt the private key"
-  echo "    -E: As above but include the unencrypted and expanded forms"
+  echo "  $(basename $0) [-p <pkidir>] [(-n|-N)] [-a <algorithm>]"
+  echo "            [-b <bits>] (-o <outfile> | <key-name>)"
+  echo "    Create a private key, optionally unencrypted"
   echo "    -a: Encryption algorithm to use (default des3)"
-  echo "    -b: Key size. No default except openssl's 512."
+  echo "    -b: Key size. No default here; openssl's default is (currently) 512"
+  echo "    -n: Don't encrypt the key (default is to encrypt)"
+  echo "    -N: Encrypt as normal but also place an unencrypted key in unencrypted-<key>"
+  echo "    -o: File to save key to (default \$PKIDIR/keys/<name>)"
+  echo "    -p: Base directory for PKI data (default \$PKIDIR)"
   if [ "$e" ]; then exit $e; fi
 }
 
-unset pkidir bits
-encrypt=0
+unset pkidir bits outfile
+encrypt=yes
 algorithm=des3
 
 if [ "$1" = "--help" ]; then usage 0; fi
-while getopts "hp:eEa:b:" arg; do
+while getopts "ha:b:nNo:p:" arg; do
   case $arg in
     h) usage 0 ;;
-    p) pkidir=$OPTARG ;;
-    e) encrypt=-1 ;;
-    E) encrypt=1 ;;
     a) algorithm=$OPTARG ;;
     b) bits=$OPTARG ;;
+    n) encrypt=no ;;
+    N) encrypt=both ;;
+    o) outfile=$OPTARG ;;
+    p) pkidir=$OPTARG ;;
     ?) usage 1 ;;
   esac
 done
 shift $(expr $OPTIND - 1)
-name="$1"
 
-cd ${pkidir:-${PKIDIR:?No PKI working directory}}
-if ! tmp=$(mktemp --tmpdir=tmp -d); then
-  echo Cannot create temporary directory. >&2
+if [ -z "$outfile" ]; then
+  : ${pkidir:=${PKIDIR:?No PKI working directory}}
+  cd "$pkidir"
+  name="${1:?No key name}"
+  # No / or NUL characters to protect the filesystem. If you screw up the
+  # config file that's your lookout.
+  fs_name=$(echo "$name" | tr '\000/' _)
+  outfile="keys/$fs_name"
+fi
+
+# Use TMPDIR to ensure this is kept away from non-volatile if necessary.
+if ! tmp=$(mktemp -t -d); then
+  echo "Cannot create temporary directory." >&2
   exit 2
 fi
 trap "rm -fr $tmp" EXIT
 
 umask 377
-openssl genrsa -out "$tmp"/key $bits
-if (( $encrypt >= 0 )); then
-  openssl rsa -in "$tmp"/key -text -out keys/"${name//\//_}"
-  if (( $encrypt )); then
-    openssl rsa -in "$tmp"/key -$algorithm -out keys/encrypted-"${name//\//_}"
-    chmod u+w keys/"${name//\//_}"
-    cat keys/encrypted-"${name//\//_}" >> keys/"${name//\//_}"
-    chmod u-w keys/"${name//\//_}"
-  fi
-else
-  openssl rsa -in "$tmp"/key -$algorithm -out keys/"${name//\//_}"
-fi
+echo Encrypt: $encrypt
+case $encrypt in
+  no)
+    openssl genrsa -out "$tmp"/unencrypted-key $bits
+    openssl rsa -in "$tmp"/unencrypted-key -text -out "$outfile"
+    ;;
+  yes)
+    openssl genrsa $bits | openssl rsa -$algorithm -out "$tmp"/encrypted-key
+    mv "$tmp"/encrypted-key "$outfile"
+    ;;
+  both)
+    openssl genrsa -out "$tmp"/unencrypted-key $bits
+    openssl rsa -in "$tmp"/unencrypted-key -$algorithm -out "$tmp"/encrypted-key
+    mv "$tmp"/encrypted-key "$outfile"
+    openssl rsa -in "$tmp"/unencrypted-key -text -out "$(dirname "$outfile")"/unencrypted-"$(basename "$outfile")"
+    ;;
+esac
