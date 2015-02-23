@@ -91,6 +91,6 @@ if [ "$crl" ]; then
 fi
 
 #if [ "$clean" ]; then
-rm -f keys/"$fs_name" keys/encrypted-"$fs_name"
+rm -f keys/"$fs_name" keys/unencrypted-"$fs_name"
 rm certificates/"$fs_name"
 rm requests/"$fs_name"
