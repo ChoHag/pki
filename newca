@@ -57,8 +57,8 @@ if [ -e "$fs_name" ]; then
 fi
 
 export default_o="${default_o:-$name}"
-export default_ou="${default_ou:-PKI${parent:+:$name}}"
-export default_cn="${default_cn:-${parent:+Sub-}CA}"
+export default_ou="${default_ou:-PKI${ca:+:$name}}"
+export default_cn="${default_cn:-${ca:+Sub-}CA}"
 mkdir "$fs_name" "$fs_name/certificates"
 echo 01 > "$fs_name/serial"
 touch "$fs_name/index"
