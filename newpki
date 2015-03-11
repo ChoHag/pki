@@ -29,6 +29,11 @@ while getopts "hp:" arg; do
 done
 shift $(expr $OPTIND - 1)
 
+if [ "${pkidir#/}" = "$pkidir" ]; then
+  echo "pkidir must be absolute, not relative." >&2
+  exit 1
+fi
+
 mkdir -p "${pkidir:=${1:-${PKIDIR:?No PKI working directory}}}"
 cd "$pkidir"
 

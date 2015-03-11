@@ -1,0 +1,2 @@
+* pkidir when given to newpki cannot be relative because it's put verbatim
+  into pki.conf
