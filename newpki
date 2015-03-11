@@ -78,6 +78,8 @@ preserve        = no
 
 [ simple_policy_ca ]
 countryName             = match
+stateOrProvinceName     = optional
+localityName            = optional
 organizationName        = match
 organizationalUnitName  = supplied
 commonName              = supplied
@@ -85,6 +87,8 @@ emailAddress            = optional
 
 [ simple_policy_subca ]
 countryName             = match
+stateOrProvinceName     = optional
+localityName            = optional
 organizationName        = supplied
 organizationalUnitName  = supplied
 commonName              = supplied

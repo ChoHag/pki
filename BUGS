@@ -1,2 +1,4 @@
 * pkidir when given to newpki cannot be relative because it's put verbatim
   into pki.conf
+
+* Certificate policies need to not be shit.
