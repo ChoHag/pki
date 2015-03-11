@@ -29,12 +29,14 @@ while getopts "hp:" arg; do
 done
 shift $(expr $OPTIND - 1)
 
+: ${pkidir:=${1:-${PKIDIR:?No PKI working directory}}}
+
 if [ "${pkidir#/}" = "$pkidir" ]; then
   echo "pkidir must be absolute, not relative." >&2
   exit 1
 fi
 
-mkdir -p "${pkidir:=${1:-${PKIDIR:?No PKI working directory}}}"
+mkdir -p "$pkidir"
 cd "$pkidir"
 
 mkdir certificates requests keys
