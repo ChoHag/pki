@@ -1,0 +1,68 @@
+#!/bin/sh
+
+set -e
+
+usage() {
+  e=$1
+  echo "Usage:"
+  echo "  $(basename $0) [-h|--help]"
+  echo "    This help"
+  echo "  $(basename $0) [-B] [-p <pkidir>] [-a <algorithm>] [-P <password-source>]"
+  echo "            [-o <outfile>] (-i <key-file> | <key-name>)"
+  echo "    Encrypt a private key"
+  echo "    -a: Encryption algorithm to use (default des3)"
+  echo "    -i: Unencrypted key to read"
+  echo "        NB. If -p is passed, $(basename $0) will cd to that directory first"
+  echo "            If -p is not passed, PKIDIR will be used if it's set"
+  echo "            If -p is not passed and PKIDIR is not set, no cd occurs"
+  echo "            These rules also affect relative paths to -o and -P"
+  echo "    -o: File to save key to (default IRREVOCABLY OVERWRITE unencrypted key)"
+  echo "    -P: Password source (passed as is to openssl rsa - see PASS PHRASE"
+  echo "        ARGUMENTS in openssl(1))"
+  echo "    -p: Base directory for PKI data (default \$PKIDIR)"
+  if [ "$e" ]; then exit $e; fi
+}
+
+unset pkidir infile outfile password
+algorithm=des3
+
+if [ "$1" = "--help" ]; then usage 0; fi
+while getopts "ha:i:o:p:P:" arg; do
+  case $arg in
+    h) usage 0 ;;
+    a) algorithm=$OPTARG ;;
+    i) infile=$OPTARG ;;
+    o) outfile=$OPTARG ;;
+    p) pkidir=$OPTARG ;;
+    P) password=$OPTARG ;;
+    ?) usage 1 ;;
+  esac
+done
+shift $(expr $OPTIND - 1)
+
+: ${pkidir:=$PKIDIR}
+# If -i is passed and pkidir/PKIDIR is set, cd into it
+# I am not sure about using PKIDIR in this case
+if [ -n "$infile" -a -n "$pkidir" ]; then
+  cd "$pkidir"
+# If -i isn't passed, calculate the infile from PKIDIR/$1
+elif [ -z "$infile" ]; then
+  : ${pkidir:?No PKI working directory}}
+  cd "$pkidir"
+  name="${1:?No key name}"
+  fs_infile=$(echo "$name" | tr '\000/' _)
+  infile="keys/$fs_infile"
+fi
+
+: ${outfile:=$infile}
+
+# Use TMPDIR to ensure this is kept away from non-volatile if necessary.
+if ! tmp=$(mktemp -t -d); then
+  echo "Cannot create temporary directory." >&2
+  exit 2
+fi
+trap "rm -fr $tmp" EXIT
+
+umask 377
+openssl rsa -$algorithm -in "$infile" -out "$tmp"/encrypted-key ${password:+-passout "$password"}
+mv "$tmp"/encrypted-key "$outfile"

@@ -7,9 +7,10 @@ usage() {
   echo "Usage:"
   echo "  $(basename $0) [-h|--help]"
   echo "    This help"
-  echo "  $(basename $0) [-p <pkidir>] [-x <extensions>] [-P <policy>]"
+  echo "  $(basename $0) [-B] [-p <pkidir>] [-x <extensions>] [-P <policy>]"
   echo "      (-s | -c <ca>) [-k <keyfile>] <request-name>"
   echo "    Sign request as CA (-c) or self-sign (-s)"
+  echo "    -B: Batch mode (Do it - don't ask questions)"
   echo "    -c: Certificate Authority"
   echo "    -k: Alternate key file"
   echo "    -p: Base directory for PKI data"
@@ -20,12 +21,13 @@ usage() {
 }
 
 unset pkidir name
-unset ca keyfile policy selfsign extensions
+unset batch ca keyfile policy selfsign extensions
 
 if [ "$1" = "--help" ]; then usage 0; fi
-while getopts "hc:k:p:P:sx:" arg; do
+while getopts "hBc:k:p:P:sx:" arg; do
   case $arg in
     h) usage 0 ;;
+    B) batch=-batch ;;
     c) export ca=$(echo "$OPTARG" | tr '\000/' _) ;;
     k) keyfile=$OPTARG ;;
     p) pkidir=$OPTARG ;;
@@ -56,5 +58,6 @@ trap "rm -fr $tmp" EXIT
 
 openssl ca -config pki.conf $selfsign ${keyfile:+-keyfile "$keyfile"}   \
     -in requests/"$fs_name" -out "$tmp"/certificate                     \
-    ${extensions:+-extensions $extensions} ${policy:+-policy $policy}
+    ${extensions:+-extensions $extensions} ${policy:+-policy $policy}   \
+    ${batch}
 mv "$tmp"/certificate certificates/"$fs_name"

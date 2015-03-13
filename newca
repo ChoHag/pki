@@ -7,10 +7,11 @@ usage() {
   echo Usage:
   echo "  $(basename $0) [-h|--help]"
   echo "    This help"
-  echo "  $(basename $0) [-p <pkidir>] [-c <parent-ca>] [-P <policy>] [-d <crl-url>]"
+  echo "  $(basename $0) [-B] [-p <pkidir>] [-c <parent-ca>] [-P <policy>] [-d <crl-url>]"
   echo "                 [(-n|-N)] [-a <algorithm>] [-b <bits>]"
   echo "                 [<ca-name>]"
   echo "    Create a CA"
+  echo "    -B: Batch mode (Do it - don't ask questions)"
   echo "    -c: Create this CA as a subca of the parent CA"
   echo "    -d: Create a CA with a CRL at the URL"
   echo "    -n: Don't encrypt the key (default is to encrypt)"
@@ -24,16 +25,17 @@ usage() {
 }
 
 unset pkidir name
-unset algorithm bits ca crl policy
+unset algorithm bits batch ca crl policy
 encrypt=yes
 eflag=-N
 
 if [ "$1" = "--help" ]; then usage 0; fi
-while getopts "ha:b:c:d:nNp:P:" arg; do
+while getopts "ha:b:Bc:d:nNp:P:" arg; do
   case $arg in
     h) usage 0 ;;
     a) algorithm=$OPTARG ;;
     b) bits=$OPTARG ;;
+    B) batch=-batch ;;
     c) ca=$OPTARG ;;
     d) export crl=$OPTARG ;;
     n) encrypt=no eflag=-n ;;
@@ -75,13 +77,14 @@ else
   plainkey=keys/unencrypted-"$fs_name"
 fi
 
+# Batch mode should allow to specify other than stdin
 newcsr -p . -x req_extensions_ca${crl:+_with_crl} -k "$plainkey" "$name"
 
 if [ -n "$ca" ]; then
-  sign -p "$pkidir" -x simple_extensions_ca${crl:+_with_crl} -P "${policy:-simple_policy_subca}" -c "$ca" "$name"
+  sign ${batch:+-B} -p "$pkidir" -x simple_extensions_ca${crl:+_with_crl} -P "${policy:-simple_policy_subca}" -c "$ca" "$name"
   cp certificates/"$fs_name" "$fs_name"/CA
 else
-  sign -p "$pkidir" -x simple_extensions_ca${crl:+_with_crl} ${policy:+-P "$policy"} -s -k "$plainkey" "$name"
+  sign ${batch:+-B} -p "$pkidir" -x simple_extensions_ca${crl:+_with_crl} ${policy:+-P "$policy"} -s -k "$plainkey" "$name"
   ln -s certificates/01.pem "$fs_name"/CA ### _Relative_ link from $fs_name/
 fi
 
