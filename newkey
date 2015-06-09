@@ -38,6 +38,8 @@ while getopts "ha:b:nNo:p:" arg; do
 done
 shift $(expr $OPTIND - 1)
 
+# If outfile is specified, a full pki directory is unnecessary. Otherwise
+# calculate what outfile should be.
 if [ -z "$outfile" ]; then
   : ${pkidir:=${PKIDIR:?No PKI working directory}}
   cd "$pkidir"
@@ -48,7 +50,13 @@ if [ -z "$outfile" ]; then
   outfile="keys/$fs_name"
 fi
 
-# Use TMPDIR to ensure this is kept away from non-volatile if necessary.
+# Whether necessary or not if pkidir is set use its temporary storage;
+# the user might have mounted something secure atop it.
+if [ -n "$pkidir" ]; then
+  export TMPDIR="$pkidir/tmp"
+fi
+
+# Use TMPDIR to ensure only non-volatile temporary storage is used if possible.
 if ! tmp=$(mktemp -t -d); then
   echo "Cannot create temporary directory." >&2
   exit 2

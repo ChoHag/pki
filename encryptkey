@@ -41,6 +41,8 @@ done
 shift $(expr $OPTIND - 1)
 
 : ${pkidir:=$PKIDIR}
+export TMPDIR="$pkidir/tmp"
+
 # If -i is passed and pkidir/PKIDIR is set, cd into it
 # I am not sure about using PKIDIR in this case
 if [ -n "$infile" -a -n "$pkidir" ]; then
@@ -56,7 +58,7 @@ fi
 
 : ${outfile:=$infile}
 
-# Use TMPDIR to ensure this is kept away from non-volatile if necessary.
+# Use TMPDIR to ensure only non-volatile temporary storage is used if possible.
 if ! tmp=$(mktemp -t -d); then
   echo "Cannot create temporary directory." >&2
   exit 2

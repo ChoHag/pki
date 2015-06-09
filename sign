@@ -44,12 +44,13 @@ name=$1
 fs_name=$(echo "$name" | tr '\000/' _)
 
 cd "${pkidir:=${PKIDIR:?No PKI working directory}}"
+export TMPDIR="$pkidir/tmp"
 
 if [ -n "$selfsign" ]; then
   export ca=$fs_name
 fi
 
-# Use TMPDIR to ensure this is kept away from non-volatile if necessary.
+# Use TMPDIR to ensure only non-volatile temporary storage is used if possible.
 if ! tmp=$(mktemp -t -d); then
   echo "Cannot create temporary directory." >&2
   exit 2

@@ -29,6 +29,8 @@ while getopts "hp:" arg; do
 done
 shift $(expr $OPTIND - 1)
 
+# Argument to -p is used. If that's not given use $1. If that's not given
+# use $PKIDIR and if that's not set complain and abort.
 : ${pkidir:=${1:-${PKIDIR:?No PKI working directory}}}
 
 if [ "${pkidir#/}" = "$pkidir" ]; then
@@ -39,8 +41,8 @@ fi
 mkdir -p "$pkidir"
 cd "$pkidir"
 
-mkdir certificates requests keys
-chmod 700 keys
+mkdir certificates requests keys tmp
+chmod 700 keys tmp
 cat <<EOF >pki.conf
 ca  =
 crl =
